@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="在一次真实对话里，看懂 Agent 如何理解、规划、调用工具并形成循环。">
+  <title>Agent Flow Lab — 在对话里看懂 Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --canvas:#f8f5ff; --paper:#fff; --ink:#211d3a; --muted:#625d78; --soft:#8b859e;
+      --purple:#6d46d9; --purple-2:#8d6ee8; --purple-soft:#eee8ff; --cyan:#087f95;
+      --cyan-soft:#e5f7f8; --lime:#ddfc76; --lime-soft:#f4ffc7; --coral:#e95f49;
+      --coral-soft:#fff0eb; --green:#1e7b5a; --line:#d8d0ea; --line-2:#ece7f5;
+      --shadow:0 16px 50px rgba(50,32,92,.11); --shadow-hard:7px 7px 0 #211d3a;
+      --r-lg:28px; --r-md:20px; --r-sm:13px;
+      --heading:"Space Grotesk",system-ui,sans-serif; --body:"DM Sans",system-ui,sans-serif;
+    }
+    * { box-sizing:border-box; }
+    html { color:var(--ink); background:var(--canvas); scroll-behavior:smooth; }
+    body { margin:0; min-width:320px; font-family:var(--body); background:
+      radial-gradient(circle at 8% 1%, rgba(221,252,118,.56), transparent 19rem),
+      radial-gradient(circle at 92% 15%, rgba(167,139,250,.22), transparent 25rem),
+      linear-gradient(rgba(109,70,217,.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(109,70,217,.035) 1px, transparent 1px), var(--canvas);
+      background-size:auto,auto,32px 32px,32px 32px;
+    }
+    button,textarea { font:inherit; }
+    button { cursor:pointer; touch-action:manipulation; }
+    button:focus-visible, textarea:focus-visible { outline:3px solid var(--purple); outline-offset:3px; }
+    svg { display:block; }
+    .skip { position:fixed; z-index:99; left:12px; top:12px; transform:translateY(-150%); padding:10px 14px; border-radius:10px; color:white; background:var(--ink); }
+    .skip:focus { transform:none; }
+    .page { width:min(1440px, calc(100% - 40px)); margin:auto; padding:18px 0 56px; }
+    .nav { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:56px; }
+    .brand { display:flex; align-items:center; gap:11px; font:700 15px var(--heading); letter-spacing:-.02em; }
+    .brand-mark { position:relative; width:38px; height:38px; display:grid; place-items:center; border:2px solid var(--ink); border-radius:12px; background:var(--lime); box-shadow:3px 3px 0 var(--ink); }
+    .brand-mark svg { width:20px; height:20px; stroke:currentColor; }
+    .nav-actions { display:flex; align-items:center; gap:10px; }
+    .learn-progress { display:flex; align-items:center; gap:9px; padding:7px 12px 7px 8px; border:1px solid var(--line); border-radius:999px; background:rgba(255,255,255,.72); color:var(--muted); font-size:12px; }
+    .learn-progress i { display:grid; place-items:center; width:27px; height:27px; border-radius:50%; color:white; background:var(--purple); font-style:normal; font-weight:700; }
+    .icon-btn { width:42px; height:42px; display:grid; place-items:center; padding:0; border:1px solid var(--line); border-radius:13px; color:var(--ink); background:white; transition:transform .18s, box-shadow .18s, border-color .18s; }
+    .icon-btn:hover { transform:translateY(-2px); border-color:var(--ink); box-shadow:0 5px 0 rgba(33,29,58,.12); }
+    .icon-btn svg { width:19px; height:19px; stroke:currentColor; }
+    .kicker { display:inline-flex; align-items:center; gap:8px; padding:7px 11px; border:1px solid var(--ink); border-radius:999px; background:var(--lime); font-weight:700; font-size:12px; box-shadow:3px 3px 0 var(--ink); }
+    .kicker svg { width:16px; stroke:currentColor; }
+    .lab { position:relative; margin-top:14px; border:2px solid var(--ink); border-radius:30px; background:var(--paper); box-shadow:var(--shadow-hard), var(--shadow); overflow:hidden; }
+    .process-guide { position:relative; padding:17px 18px 18px; border-bottom:2px solid var(--ink); background:linear-gradient(105deg,#fff 0%,#faf7ff 56%,#f4ffc7 140%); }
+    .process-guide-head { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:40px; }
+    .process-guide-head h2 { margin:0; font:700 20px var(--heading); letter-spacing:-.035em; }
+    .process-guide-head p { margin:3px 0 0; color:var(--muted); font-size:12px; }
+    .process-tip { flex:0 0 auto; padding:7px 10px; border:1px solid var(--line); border-radius:999px; color:var(--purple); background:white; font:800 10px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.04em; transition:color .2s,background .2s,border-color .2s,box-shadow .2s,transform .2s; }
+    .process-tip .loop-label { display:none; }
+    .process-guide.looping .process-tip { color:white; border:2px solid var(--ink); background:var(--coral); box-shadow:3px 3px 0 var(--ink); transform:translateY(-2px); font-size:12px; }
+    .process-guide.looping .process-tip .map-label { display:none; }
+    .process-guide.looping .process-tip .loop-label { display:inline; }
+    .loop-route { position:absolute; z-index:4; left:18px; right:18px; top:48px; height:64px; overflow:visible; pointer-events:none; opacity:0; transition:opacity .25s ease; }
+    .loop-route .loop-main { fill:none; stroke:var(--coral); stroke-width:3; stroke-linecap:round; stroke-dasharray:8 7; vector-effect:non-scaling-stroke; filter:drop-shadow(0 2px 3px rgba(233,95,73,.22)); }
+    .loop-route text { fill:#8d2f20; font:800 12px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.035em; }
+    .loop-route circle { fill:var(--coral); stroke:white; stroke-width:2; vector-effect:non-scaling-stroke; }
+    .process-guide.looping .loop-route { opacity:1; }
+    .process-guide.looping .loop-route .loop-main { animation:loop-dash .75s linear infinite; }
+    .lab-body { display:grid; grid-template-columns:minmax(0,1.18fr) minmax(390px,.82fr); min-height:640px; }
+    .chat { min-width:0; display:flex; flex-direction:column; border-right:2px solid var(--ink); background:#fff; }
+    .chat-head,.inside-head { min-height:69px; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:13px 18px; border-bottom:1px solid var(--line-2); }
+    .agent-id { display:flex; align-items:center; gap:11px; min-width:0; }
+    .avatar { flex:0 0 auto; width:38px; height:38px; display:grid; place-items:center; border-radius:12px; color:white; background:var(--purple); box-shadow:3px 3px 0 var(--purple-soft); }
+    .avatar svg { width:21px; height:21px; stroke:currentColor; }
+    .agent-id strong { display:block; font:700 14px var(--heading); }
+    .online { display:flex; align-items:center; gap:6px; margin-top:3px; color:var(--soft); font-size:11px; }
+    .online::before { content:""; width:7px; height:7px; border-radius:50%; background:#38b980; }
+    .chat-meta { padding:6px 9px; border-radius:999px; color:var(--muted); background:#f6f3fb; font:600 10px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .messages { flex:1; min-height:0; height:520px; overflow-y:auto; overscroll-behavior:contain; padding:24px 24px 12px; scroll-behavior:smooth; }
+    .msg { display:flex; align-items:flex-start; gap:10px; margin-bottom:20px; animation:message-in .3s cubic-bezier(.2,.8,.2,1) both; }
+    .msg.user { justify-content:flex-end; }
+    .mini-avatar { flex:0 0 auto; width:28px; height:28px; display:grid; place-items:center; border-radius:9px; color:white; background:var(--purple); margin-top:2px; }
+    .mini-avatar svg { width:15px; stroke:currentColor; }
+    .bubble { max-width:min(78%,580px); padding:12px 15px; border-radius:7px 18px 18px 18px; color:var(--ink); background:#f3f0f9; font-size:14px; line-height:1.58; overflow-wrap:anywhere; }
+    .user .bubble { border-radius:18px 7px 18px 18px; color:white; background:var(--purple); }
+    .welcome .bubble { background:var(--lime-soft); border:1px solid #c8e767; }
+    .work-card { width:min(88%,620px); border:1px solid var(--line); border-radius:18px; overflow:hidden; background:white; box-shadow:0 9px 25px rgba(57,35,99,.08); animation:message-in .3s cubic-bezier(.2,.8,.2,1) both; }
+    .work-top { display:flex; align-items:center; gap:11px; padding:14px 15px; border-bottom:1px solid var(--line-2); }
+    .pulse { position:relative; flex:0 0 auto; width:28px; height:28px; display:grid; place-items:center; border-radius:9px; color:var(--purple); background:var(--purple-soft); }
+    .pulse::after { content:""; position:absolute; inset:-3px; border:1px solid var(--purple); border-radius:11px; opacity:.35; animation:pulse 1.5s ease-out infinite; }
+    .pulse svg { width:15px; stroke:currentColor; }
+    .work-title { min-width:0; flex:1; }
+    .work-title strong { display:block; font:700 12px var(--heading); }
+    .work-title span { display:block; margin-top:2px; color:var(--soft); font-size:11px; }
+    .round-pill { padding:5px 8px; border-radius:999px; color:var(--purple); background:var(--purple-soft); font:700 9px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .work-body { padding:12px 15px 14px; }
+    .work-row { display:flex; align-items:center; gap:9px; color:var(--muted); font-size:12px; line-height:1.4; }
+    .work-row + .work-row { margin-top:9px; }
+    .work-icon { flex:0 0 auto; width:21px; height:21px; display:grid; place-items:center; border-radius:7px; color:var(--cyan); background:var(--cyan-soft); }
+    .work-icon svg { width:12px; stroke:currentColor; }
+    .work-row.current { color:var(--ink); font-weight:600; }
+    .work-row.current .work-icon { color:white; background:var(--purple); }
+    .work-row.done .work-icon { color:white; background:var(--green); }
+    .work-row.warn .work-icon { color:white; background:var(--coral); }
+    .answer { background:#f7f5fb; border:1px solid var(--line); }
+    .answer strong { display:block; margin-bottom:8px; font:700 14px var(--heading); }
+    .answer ul { margin:8px 0 10px; padding-left:19px; }
+    .answer li + li { margin-top:5px; }
+    .evidence-btn { display:inline-flex; align-items:center; gap:6px; min-height:36px; padding:6px 10px; margin-top:7px; border:1px solid var(--line); border-radius:10px; color:var(--purple); background:white; font-weight:700; font-size:11px; transition:border-color .18s, background .18s; }
+    .evidence-btn:hover { border-color:var(--purple); background:var(--purple-soft); }
+    .evidence-btn svg { width:14px; stroke:currentColor; }
+    .evidence { display:none; margin-top:10px; padding:10px; border-left:3px solid var(--cyan); border-radius:0 9px 9px 0; color:var(--muted); background:var(--cyan-soft); font-size:11px; }
+    .evidence.open { display:block; animation:fade .18s both; }
+    .composer-wrap { position:relative; padding:12px 16px 16px; background:linear-gradient(transparent,#fff 12%); }
+    .start-coach { position:absolute; z-index:6; right:17px; bottom:91px; width:238px; padding:11px 14px; border:2px solid var(--ink); border-radius:15px; color:var(--ink); background:var(--lime); box-shadow:4px 4px 0 var(--ink); pointer-events:none; animation:coach-float 1.5s ease-in-out infinite alternate; transition:opacity .2s,transform .2s; }
+    .start-coach strong { display:block; font:800 13px var(--heading); }
+    .start-coach span { display:block; margin-top:3px; color:#49425e; font-size:11px; line-height:1.4; }
+    .start-coach svg { position:absolute; right:17px; bottom:-43px; width:48px; height:48px; overflow:visible; color:var(--ink); filter:drop-shadow(2px 2px 0 white); }
+    .start-coach.dismissed { opacity:0; transform:translateY(8px); visibility:hidden; animation:none; }
+    .composer { display:flex; align-items:flex-end; gap:8px; padding:8px 8px 8px 14px; border:1px solid var(--line); border-radius:18px; background:white; box-shadow:0 8px 24px rgba(53,34,92,.10); transition:border-color .18s, box-shadow .18s; }
+    .composer:focus-within { border-color:var(--purple); box-shadow:0 0 0 3px var(--purple-soft), 0 8px 24px rgba(53,34,92,.10); }
+    .composer label { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+    textarea { flex:1; min-height:45px; max-height:118px; resize:none; padding:10px 2px; border:0; outline:0; color:var(--ink); background:transparent; font-size:16px; line-height:1.45; }
+    textarea::placeholder { color:#948da7; }
+    .send { flex:0 0 auto; width:46px; height:46px; display:grid; place-items:center; padding:0; border:0; border-radius:14px; color:white; background:var(--purple); transition:transform .16s, background .16s; }
+    .send:hover { transform:translateY(-2px); background:#5d36ca; }
+    .send:disabled { cursor:not-allowed; opacity:.45; transform:none; }
+    .send svg { width:19px; height:19px; stroke:currentColor; }
+    .composer-help { display:flex; justify-content:space-between; gap:10px; padding:8px 3px 0; color:var(--soft); font-size:10px; }
+    .inside { min-width:0; display:flex; flex-direction:column; background:#fbfaff; }
+    .inside-title span { display:block; color:var(--purple); font:700 10px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .inside-title strong { display:block; margin-top:3px; font:700 14px var(--heading); }
+    .play-controls { display:flex; gap:7px; }
+    .control { min-width:42px; min-height:38px; display:flex; align-items:center; justify-content:center; gap:6px; padding:0 10px; border:1px solid var(--line); border-radius:11px; color:var(--muted); background:white; font-size:11px; font-weight:700; transition:background .18s,border-color .18s,color .18s; }
+    .control:hover { color:var(--ink); border-color:var(--ink); }
+    .control:disabled { cursor:not-allowed; opacity:.42; transform:none; }
+    .control svg { width:15px; stroke:currentColor; }
+    .control.primary { color:white; border-color:var(--purple); background:var(--purple); }
+    .control[hidden] { display:none; }
+    .inside-scroll { flex:1; padding:20px; }
+    .lesson-progress { position:relative; display:grid; grid-template-columns:repeat(6,1fr); gap:9px; }
+    .loop-zone { position:absolute; z-index:0; left:-8px; top:-10px; bottom:-10px; width:calc(66.6667% - 1px); border:3px dashed var(--coral); border-radius:20px; background:rgba(255,128,102,.06); box-shadow:0 0 0 0 rgba(233,95,73,0); opacity:0; transform:scale(.985); transform-origin:center; pointer-events:none; transition:opacity .25s ease,transform .25s ease; }
+    .loop-zone::before { content:"AGENT LOOP"; position:absolute; left:16px; top:-38px; padding:5px 11px; border:2px solid var(--ink); border-radius:999px; color:white; background:var(--coral); box-shadow:3px 3px 0 var(--ink); font:800 12px var(--heading); letter-spacing:.06em; white-space:nowrap; }
+    .loop-zone::after { content:"循环执行区"; position:absolute; right:14px; bottom:-13px; padding:4px 9px; border:1px solid var(--coral); border-radius:999px; color:#8d2f20; background:#fff7f4; font:800 10px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.05em; }
+    .process-guide.looping .loop-zone { opacity:1; transform:none; animation:loop-zone-pulse 1.8s ease-in-out infinite alternate; }
+    .stage-btn { position:relative; z-index:1; min-width:0; min-height:88px; padding:11px 11px 10px; border:1px solid var(--line); border-radius:14px; color:var(--ink); background:white; text-align:left; transition:background .2s,border-color .2s,color .2s,transform .2s,box-shadow .2s; }
+    .stage-btn::after { content:""; position:absolute; top:50%; right:-8px; width:7px; height:7px; border-top:1.5px solid var(--soft); border-right:1.5px solid var(--soft); transform:translateY(-50%) rotate(45deg); }
+    .stage-btn:last-child::after { display:none; }
+    .stage-btn i { display:block; margin-bottom:9px; color:var(--purple); font:800 11px ui-monospace,SFMono-Regular,Menlo,monospace; font-style:normal; letter-spacing:.025em; }
+    .stage-btn strong { display:block; font:750 16px var(--heading); letter-spacing:-.025em; }
+    .stage-btn span { display:block; margin-top:4px; color:var(--muted); font-size:11px; line-height:1.3; }
+    .stage-btn.done { border-color:#9dcdb8; background:#f0fbf6; }
+    .stage-btn.done i { color:var(--green); }
+    .stage-btn.active { color:white; border-color:var(--purple); background:var(--purple); transform:translateY(-2px); box-shadow:0 5px 0 var(--purple-soft); }
+    .stage-btn.active i,.stage-btn.active span { color:white; }
+    .scene { position:relative; min-height:318px; overflow:hidden; padding:20px; border:1px solid var(--line); border-radius:22px; background:white; }
+    .scene::before { content:""; position:absolute; inset:0; pointer-events:none; background:radial-gradient(circle at 85% 10%, rgba(221,252,118,.55), transparent 11rem); }
+    .scene-top { position:relative; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    .scene-kicker { display:inline-flex; padding:4px 7px; border-radius:7px; color:var(--purple); background:var(--purple-soft); font:800 12px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.065em; }
+    .scene h2 { max-width:370px; margin:7px 0 0; font:700 24px/1.12 var(--heading); letter-spacing:-.04em; text-wrap:balance; }
+    .scene-count { flex:0 0 auto; padding:6px 9px; border:1px solid var(--line); border-radius:999px; color:var(--muted); background:#fff; font:700 9px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .visual { position:relative; min-height:160px; display:grid; place-items:center; margin-top:17px; }
+    .waiting-visual { width:100%; display:grid; grid-template-columns:repeat(3,1fr); gap:9px; }
+    .waiting-visual div { height:92px; border:1px dashed var(--line); border-radius:14px; background:#fbfaff; }
+    .waiting-visual div:nth-child(2) { transform:translateY(17px); background:var(--purple-soft); }
+    .waiting-visual div:nth-child(3) { background:var(--lime-soft); }
+    .context-window { width:100%; display:grid; gap:10px; }
+    .context-window.receiving { animation:context-receive 1.75s cubic-bezier(.2,.8,.2,1); }
+    .context-part { position:relative; overflow:hidden; display:grid; grid-template-columns:96px 1fr auto; align-items:center; gap:9px; min-height:38px; padding:8px 10px; border:1px solid var(--line-2); border-radius:11px; background:#faf9fd; font-size:10px; }
+    .context-part strong { font:700 9px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .meter { height:6px; border-radius:999px; background:#ebe7f2; overflow:hidden; }
+    .meter i { display:block; height:100%; border-radius:inherit; background:var(--bar,var(--purple)); transform-origin:left; animation:grow .5s ease-out both; }
+    .context-part span { color:var(--soft); font:600 9px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .llm-visual { position:relative; width:170px; height:145px; display:grid; place-items:center; }
+    .orb { position:relative; z-index:2; width:88px; height:88px; display:grid; place-items:center; border:2px solid var(--ink); border-radius:28px; color:white; background:var(--purple); box-shadow:6px 6px 0 var(--lime); font:700 18px var(--heading); }
+    .orbit { position:absolute; inset:6px; border:1px dashed var(--purple-2); border-radius:50%; animation:spin 7s linear infinite; }
+    .orbit::before,.orbit::after { content:""; position:absolute; width:13px; height:13px; border:2px solid var(--ink); border-radius:50%; background:var(--lime); }
+    .orbit::before { left:16px; top:5px; }.orbit::after { right:10px; bottom:14px; background:var(--cyan-soft); }
+    .planning-demo { width:100%; }
+    .source-task { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid #bba9e9; border-radius:11px; color:var(--ink); background:var(--purple-soft); font-size:10px; font-weight:600; animation:source-focus 1.125s ease-out both; }
+    .source-task span { flex:0 0 auto; padding:4px 6px; border-radius:7px; color:white; background:var(--purple); font:700 8px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .split-label { position:relative; height:26px; display:grid; place-items:center; color:var(--purple); font-size:9px; font-weight:700; }
+    .split-label::before { content:""; position:absolute; left:50%; top:0; bottom:12px; border-left:1.5px dashed var(--purple-2); }
+    .split-label b { position:relative; padding:2px 7px; border-radius:999px; background:white; }
+    .plan-list { width:100%; display:grid; gap:6px; }
+    .plan-row { display:grid; grid-template-columns:28px 1fr auto; align-items:center; gap:9px; padding:10px; border:1px solid var(--line); border-radius:12px; background:#faf9fd; font-size:11px; }
+    .plan-row { animation:task-split 1.15s cubic-bezier(.2,.85,.2,1) both; }
+    .plan-row:nth-child(1) { animation-delay:.45s; }.plan-row:nth-child(2) { animation-delay:.95s; }.plan-row:nth-child(3) { animation-delay:1.45s; }
+    .plan-row i { width:28px; height:28px; display:grid; place-items:center; border-radius:9px; color:white; background:var(--purple); font:700 10px var(--heading); font-style:normal; }
+    .plan-row span { color:var(--soft); font-size:9px; }
+    .tool-view { width:100%; display:grid; grid-template-columns:minmax(0,1.25fr) minmax(150px,.75fr); gap:10px; align-items:stretch; }
+    .weather-card { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; padding:14px; border:2px solid var(--ink); border-radius:16px; background:linear-gradient(135deg,#e8faff,#f8ffcf); box-shadow:4px 4px 0 var(--ink); }
+    .weather-icon { width:54px; height:54px; display:grid; place-items:center; border:1px solid #c9b8f2; border-radius:16px; color:var(--purple); background:white; }
+    .weather-icon svg { width:34px; height:34px; stroke:currentColor; }
+    .weather-main small { display:block; color:var(--muted); font-size:10px; }.weather-main strong { display:block; margin-top:2px; font:700 17px var(--heading); }
+    .weather-temp { text-align:right; }.weather-temp strong { display:block; font:700 26px var(--heading); }.weather-temp span { color:var(--muted); font-size:9px; }
+    .tool-meta { display:flex; flex-direction:column; justify-content:center; gap:7px; padding:11px; border:1px solid var(--line); border-radius:14px; background:#faf9fd; }
+    .tool-meta span { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:9px; }.tool-meta b { color:var(--ink); font-weight:700; }
+    .tool-code { grid-column:1/-1; padding:7px 10px; border-radius:10px; color:#d9d2ef; background:var(--ink); font:500 9px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .tool-code b { color:#8ee7ef; }.tool-code .bad { color:#ffb6a8; }.tool-code .good { color:#8ff0c1; }
+    .tool-terminal { width:100%; overflow:hidden; border:2px solid var(--ink); border-radius:14px; background:var(--ink); box-shadow:5px 5px 0 var(--cyan-soft); }
+    .terminal-head { display:flex; align-items:center; gap:5px; padding:8px 10px; color:#d8d1ec; border-bottom:1px solid #4e486a; font:600 9px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .terminal-head i { width:7px; height:7px; border-radius:50%; background:#ff8066; }.terminal-head i:nth-child(2){background:#f0d25e}.terminal-head i:nth-child(3){background:#65d5a4}
+    .terminal-line { padding:12px; color:#f5f0ff; font:500 10px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .terminal-line b { color:#90e7ef; }.terminal-line .bad { color:#ffaf9f; }.terminal-line .good { color:#8ff0c1; }
+    .loop-banner { display:flex; align-items:center; gap:10px; margin-top:11px; padding:10px 12px; border:1px solid #f2a08f; border-radius:12px; color:#8a2e1d; background:var(--coral-soft); font-size:11px; font-weight:600; animation:message-in .25s both; }
+    .loop-banner svg { flex:0 0 auto; width:18px; stroke:currentColor; animation:spin 1.5s linear infinite; }
+    .output-visual { width:100%; display:block; }
+    .output-check { width:44px; height:44px; display:grid; place-items:center; border:2px solid var(--ink); border-radius:14px; color:white; background:var(--green); box-shadow:4px 4px 0 var(--lime); }
+    .output-check svg { width:22px; stroke:currentColor; }
+    .answer-preview { width:100%; padding:14px; border:2px solid var(--ink); border-radius:16px; background:linear-gradient(135deg,#fff,#f4ffc7); box-shadow:4px 4px 0 var(--lime); }
+    .answer-preview-top { display:flex; align-items:center; gap:10px; }.answer-preview-top .output-check { flex:0 0 auto; width:38px; height:38px; border-radius:12px; box-shadow:none; }.answer-preview-top small { display:block; color:var(--muted); font-size:9px; }.answer-preview-top strong { display:block; margin-top:1px; font:700 18px var(--heading); }
+    .answer-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }.answer-tags span { padding:5px 8px; border:1px solid var(--line); border-radius:999px; color:var(--muted); background:white; font-size:9px; }
+    .answer-reason { margin:10px 0 0; color:var(--ink); font-size:11px; line-height:1.45; }
+    .memory-visual { width:100%; display:grid; grid-template-columns:1fr auto; align-items:center; gap:14px; padding:14px; border:1px solid #b7a6e3; border-radius:15px; background:var(--purple-soft); }
+    .memory-visual strong { display:block; font:700 12px var(--heading); }.memory-visual p { margin:4px 0 0; color:var(--muted); font-size:10px; }
+    .memory-icon { width:45px; height:45px; display:grid; place-items:center; border-radius:14px; color:white; background:var(--purple); }
+    .memory-icon svg { width:22px; stroke:currentColor; }
+    .flow-token { position:fixed; z-index:50; display:flex; align-items:center; gap:8px; max-width:260px; min-height:42px; padding:9px 12px; border:2px solid var(--ink); border-radius:13px; color:white; background:var(--purple); box-shadow:5px 5px 0 rgba(33,29,58,.22); font-size:11px; font-weight:700; line-height:1.35; pointer-events:none; overflow:hidden; }
+    .flow-token::after { content:"即将送入上下文"; position:absolute; inset:auto 8px 4px auto; padding:2px 5px; border-radius:999px; color:var(--ink); background:var(--lime); font:800 8px ui-monospace,SFMono-Regular,Menlo,monospace; opacity:0; animation:transfer-label 2.75s ease-in-out both; }
+    .flow-token.tool-result { color:#672619; background:var(--coral-soft); border-color:var(--coral); box-shadow:5px 5px 0 rgba(233,95,73,.18); }
+    .flow-token.tool-result::after { content:"即将回流"; }
+    .flow-token svg { flex:0 0 auto; width:17px; height:17px; stroke:currentColor; }
+    .why-card { position:relative; margin-top:12px; padding:14px 15px; border:2px solid var(--ink); border-radius:16px; background:var(--lime); box-shadow:4px 4px 0 var(--ink); }
+    .why-label { display:flex; align-items:center; gap:6px; font:800 12px ui-monospace,SFMono-Regular,Menlo,monospace; text-transform:uppercase; letter-spacing:.055em; }
+    .why-label svg { width:15px; stroke:currentColor; }
+    .why-card p { margin:7px 0 0; color:#37304f; font-size:12px; line-height:1.5; }
+    .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; }
+    .stat { padding:10px; border:1px solid var(--line); border-radius:12px; background:white; }
+    .stat span { display:block; color:var(--soft); font-size:9px; }.stat strong { display:block; margin-top:3px; font:700 12px var(--heading); }
+    footer { display:flex; justify-content:space-between; gap:18px; padding:36px 20px 0; color:var(--soft); font-size:11px; }
+    .sr-live { position:fixed; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+    @keyframes message-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+    @keyframes pulse { 70%,100% { transform:scale(1.28); opacity:0; } }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @keyframes grow { from { transform:scaleX(0); } }
+    @keyframes fade { from { opacity:0; } }
+    @keyframes loop-dash { to { stroke-dashoffset:28; } }
+    @keyframes loop-zone-pulse { from { box-shadow:0 0 0 0 rgba(233,95,73,.10); } to { box-shadow:0 0 0 7px rgba(233,95,73,.14); } }
+    @keyframes coach-float { from { transform:translateY(0) rotate(-.4deg); } to { transform:translateY(-5px) rotate(.4deg); } }
+    @keyframes transfer-label { 0%,100% { opacity:0; transform:translateY(3px); } 18%,82% { opacity:1; transform:none; } }
+    @keyframes context-receive { 0% { box-shadow:0 0 0 0 rgba(109,70,217,0); transform:scale(.98); } 45% { box-shadow:0 0 0 7px rgba(109,70,217,.15); } 100% { box-shadow:none; transform:none; } }
+    @keyframes source-focus { from { opacity:0; transform:scale(.96); } }
+    @keyframes task-split { from { opacity:0; transform:translateY(-12px) scale(.97); } to { opacity:1; transform:none; } }
+    @media (min-width:1101px) { .page { zoom:.9; } }
+    @media (max-width:1100px) {
+      .lab-body { grid-template-columns:1fr; }.chat { border-right:0; border-bottom:2px solid var(--ink); }.messages { height:440px; }.inside-scroll { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,.45fr); gap:14px; }.why-card { margin-top:0; }.stats { grid-column:2; align-self:end; }.scene { grid-row:1/3; }
+    }
+    @media (max-width:720px) {
+      .page { width:min(calc(100% - 20px),620px); padding-top:8px; }.learn-progress span { display:none; }
+      .lab { border-radius:22px; box-shadow:4px 4px 0 var(--ink); }.chat-head,.inside-head { padding:12px; }.messages { height:480px; padding:18px 13px 8px; }.bubble { max-width:88%; }.work-card { width:96%; }
+      .process-guide { padding:14px 12px 15px; }.process-guide-head { display:block; margin-bottom:14px; }.process-tip { display:inline-block; margin-top:8px; }.loop-route { display:none; }.process-guide.looping .process-tip { color:white; border-color:var(--ink); background:var(--coral); }.lesson-progress { grid-template-columns:repeat(2,1fr); gap:8px; }.loop-zone { left:-5px; top:-6px; bottom:auto; width:calc(100% + 10px); height:calc(66.6667% + 2px); border-radius:17px; }.loop-zone::before { left:12px; top:-34px; padding:4px 8px; font-size:10px; }.loop-zone::after { right:10px; bottom:-11px; font-size:9px; }.stage-btn { min-height:84px; }.stage-btn::after { display:none; }.composer-wrap { padding:10px; }.start-coach { right:12px; bottom:88px; width:min(228px,calc(100% - 42px)); }.composer-help span:first-child { display:none; }.inside-scroll { display:block; padding:14px 12px 17px; }.scene { padding:16px; min-height:315px; }.why-card,.stats { margin-top:11px; }.tool-view { grid-template-columns:1fr; }.tool-code { grid-column:auto; }
+      footer { display:block; padding-left:4px; padding-right:4px; line-height:1.7; }
+    }
+    @media (max-width:430px) {
+      .brand { font-size:13px; }.nav { gap:8px; }.nav .kicker { gap:5px; padding:6px 8px; font-size:10px; box-shadow:2px 2px 0 var(--ink); }.nav .kicker svg { width:14px; }.nav-actions .icon-btn { display:none; }.scene h2 { font-size:21px; }.control span { display:none; }.control { padding:0 9px; }
+      .context-part { grid-template-columns:74px 1fr; }.context-part span { grid-column:2; }.weather-card { grid-template-columns:auto 1fr; }.weather-temp { grid-column:2; text-align:left; display:flex; align-items:baseline; gap:6px; }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; scroll-behavior:auto!important; }
+      .flow-token,.loop-route circle { display:none!important; }
+    }
+    body.embed { overflow:hidden; background:transparent; }
+    body.embed .start-coach { display:none!important; }
+    body.embed .page { width:100%; margin:0; padding:0; zoom:1; }
+    body.embed .nav,body.embed footer { display:none; }
+    body.embed .lab { margin-top:0; box-shadow:none; }
+    @media (max-width:360px) { .brand-name,.learn-progress { display:none; } }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#lab">跳到交互演示</a>
+  <main class="page">
+    <nav class="nav" aria-label="页面导航">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 7.2 12 3l8 4.2v9.6L12 21l-8-4.2Z"/><path d="m4 7.2 8 4.2 8-4.2M12 11.4V21"/></svg></span>
+        <span class="brand-name">AGENT FLOW LAB</span>
+      </div>
+      <span class="kicker"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m13 2-2 7h6l-7 13 2-9H6z"/></svg>3 分钟互动实验</span>
+      <div class="nav-actions">
+        <div class="learn-progress"><i id="navProgress">0</i><span>已了解 0 / 6 个阶段</span></div>
+        <button class="icon-btn" type="button" id="replayTop" aria-label="重新开始演示" title="重新开始">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4.9 6.2A9 9 0 1 1 3 12"/><path d="M3 4v6h6"/></svg>
+        </button>
+      </div>
+    </nav>
+
+    <section class="lab" id="lab" aria-label="Agent 交互实验">
+      <header class="process-guide">
+        <div class="process-guide-head">
+          <div><h2>Agent 完成任务的 6 个关键步骤</h2><p>运行时会逐个点亮；完成后可以点击任一步回看原理。</p></div>
+          <span class="process-tip"><span class="map-label">核心原理地图</span><span class="loop-label">AGENT LOOP · 循环执行中</span></span>
+        </div>
+        <svg class="loop-route" viewBox="0 0 1200 70" preserveAspectRatio="none" aria-hidden="true">
+          <defs><marker id="loopArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#e95f49" stroke="none"/></marker></defs>
+          <path class="loop-main" d="M700 66 C700 5 100 5 100 66" marker-end="url(#loopArrow)"/>
+          <text x="400" y="18" text-anchor="middle">工具结果回到上下文 → 重新规划</text>
+          <circle r="5"><animateMotion dur="1.6s" repeatCount="indefinite" path="M700 66 C700 5 100 5 100 66"/></circle>
+        </svg>
+        <div class="lesson-progress" id="stageRail" aria-label="Agent 六阶段">
+          <div class="loop-zone" aria-hidden="true"></div>
+          <button class="stage-btn" data-stage="context" type="button"><i>01 · CONTEXT</i><strong>装入上下文</strong><span>规则、问题和历史</span></button>
+          <button class="stage-btn" data-stage="llm" type="button"><i>02 · LLM</i><strong>理解任务</strong><span>识别目标与约束</span></button>
+          <button class="stage-btn" data-stage="planning" type="button"><i>03 · PLANNING</i><strong>制定计划</strong><span>拆步骤、选工具</span></button>
+          <button class="stage-btn" data-stage="tools" type="button"><i>04 · TOOLS</i><strong>工具调用</strong><span>查询实时天气</span></button>
+          <button class="stage-btn" data-stage="output" type="button"><i>05 · OUTPUT</i><strong>生成回答</strong><span>把证据变成建议</span></button>
+          <button class="stage-btn" data-stage="memory" type="button"><i>06 · MEMORY</i><strong>写入记忆</strong><span>留下可复用偏好</span></button>
+        </div>
+      </header>
+      <div class="lab-body">
+      <section class="chat" aria-label="与 Agent 对话">
+        <header class="chat-head">
+          <div class="agent-id">
+            <span class="avatar" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="4" y="6" width="16" height="13" rx="4"/><path d="M9 11h.01M15 11h.01M9 15h6M12 6V3m-2 0h4"/></svg></span>
+            <div><strong>小流 · Agent 助手</strong><span class="online">在线，等待你的任务</span></div>
+          </div>
+          <span class="chat-meta">DEMO MODE</span>
+        </header>
+        <div class="messages" id="messages" aria-label="对话记录">
+          <div class="msg welcome">
+            <span class="mini-avatar" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M8 10h.01M16 10h.01M9 15h6"/><rect x="3" y="4" width="18" height="16" rx="5"/></svg></span>
+            <div class="bubble">你好！我们用“查询北京周末天气并推荐拍摄时间”这个例子，一起看看 Agent 如何从问题走到可靠答案。点击发送即可开始。</div>
+          </div>
+        </div>
+        <div class="composer-wrap">
+          <div class="start-coach" id="startCoach" aria-hidden="true"><strong>从这里开始体验</strong><span>在输入框里写任务，然后点击右侧发送按钮。</span><svg viewBox="0 0 52 52" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5c18 3 29 13 31 30"/><path d="m29 29 9 7 7-10"/></svg></div>
+          <div class="composer">
+            <label for="prompt">发送任务给 Agent</label>
+            <textarea id="prompt" rows="1" placeholder="例如：查北京周末天气，推荐适合拍摄的时间">查北京周末天气，推荐适合户外拍摄的时间。</textarea>
+            <button class="send" type="button" id="sendBtn" aria-label="发送任务">
+              <svg id="sendIcon" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            </button>
+          </div>
+          <div class="composer-help"><span>这是一段交互演示，不会真的访问外部服务</span><span>Enter 发送 · Shift + Enter 换行</span></div>
+        </div>
+      </section>
+
+      <section class="inside" aria-label="Agent 内部视图">
+        <header class="inside-head">
+          <div class="inside-title"><span>Inside the agent</span><strong id="insideStatus">等待一个任务</strong></div>
+          <div class="play-controls">
+            <button class="control" id="modeBtn" type="button" aria-pressed="false" title="切换逐步模式"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M8 5v14l11-7Z"/></svg><span>自动</span></button>
+            <button class="control" id="pauseBtn" type="button" disabled><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M8 5v14M16 5v14"/></svg><span>暂停</span></button>
+            <button class="control" id="resetBtn" type="button" aria-label="重置整个任务" title="重置整个任务"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span>重置</span></button>
+            <button class="control" id="prevBtn" type="button" hidden aria-label="上一步"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg><span>上一步</span></button>
+            <button class="control primary" id="nextBtn" type="button" hidden><span>下一步</span><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button>
+          </div>
+        </header>
+        <div class="inside-scroll">
+          <article class="scene" id="scene" aria-live="off">
+            <div class="scene-top"><div><div class="scene-kicker">READY · 00</div><h2>发出一句话，启动整个 Agent</h2></div><span class="scene-count">0 / 6</span></div>
+            <div class="visual"><div class="waiting-visual" aria-hidden="true"><div></div><div></div><div></div></div></div>
+          </article>
+          <aside class="why-card" id="whyCard">
+            <div class="why-label"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 18h6M10 22h4"/><path d="M8.5 14.5A7 7 0 1 1 15.5 14.5c-.9.7-1.5 1.4-1.5 2.5h-4c0-1.1-.6-1.8-1.5-2.5Z"/></svg>这一刻，你会看懂</div>
+            <p id="whyText">Agent 不是一次性生成答案。一次任务会经过理解、规划、行动、校验，并在必要时重复这个循环。</p>
+          </aside>
+          <div class="stats" aria-label="运行统计">
+            <div class="stat"><span>上下文</span><strong id="tokenStat">0 tokens</strong></div>
+            <div class="stat"><span>规划轮次</span><strong id="roundStat">0</strong></div>
+            <div class="stat"><span>工具调用</span><strong id="toolStat">0</strong></div>
+          </div>
+        </div>
+      </section>
+      </div>
+    </section>
+    <footer><span>AGENT FLOW LAB · UX CONCEPT v2.0</span><span>说明：演示展示可观察的执行摘要，不展示模型私有思维链。</span></footer>
+  </main>
+  <div class="sr-live" id="live" aria-live="polite"></div>
+
+  <script>
+    const $ = (s,root=document) => root.querySelector(s);
+    const $$ = (s,root=document) => [...root.querySelectorAll(s)];
+    const icons = {
+      brain:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9.5 4.5A3 3 0 0 0 4 6v2a3 3 0 0 0 0 5v2a3 3 0 0 0 5.5 1.5M14.5 4.5A3 3 0 0 1 20 6v2a3 3 0 0 1 0 5v2a3 3 0 0 1-5.5 1.5M12 3v18"/></svg>',
+      check:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>',
+      tool:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5-5L7.5 3.5l3 3L8 9l-3-3-2.2 2.2a4 4 0 0 0 5 5l8.9 8.9a2.1 2.1 0 0 0 3-3Z"/></svg>'
+    };
+    const copy = {
+      context:{k:'CONTEXT · 01',title:'先把这次对话“装箱”',why:'模型只看得到进入 Context Window 的内容。系统规则、你的任务与工具结果会被一起封装，但窗口容量有限。'},
+      llm:{k:'LLM · 02',title:'模型理解目标，而不是立刻回答',why:'这一阶段负责识别目标与约束。演示只呈现可观察的任务摘要，不展示模型私有思维链。'},
+      planning:{k:'PLANNING · 03',title:'把目标拆成可以行动的步骤',why:'Planning 决定先做什么、调用哪个工具，以及拿到结果后如何判断任务是否真的完成。'},
+      tools:{k:'工具调用 · 04',title:'调用天气工具，获取实时预报',why:'LLM 自身不知道实时天气，所以 Agent 会调用天气 API。工具拿回降水、风力和日落时间，作为回答的事实依据。'},
+      output:{k:'生成回答 · 05',title:'把天气证据变成拍摄建议',why:'这一步不是简单复制天气数据。Agent 会结合你的目标，筛选出最有用的结论，并说明为什么推荐这个时间。'},
+      memory:{k:'MEMORY · 06',title:'把未来有用的东西留下来',why:'长期记忆和上下文不同。它保存稳定偏好或任务摘要，下次按需检索，而不是无限占用当前窗口。'}
+    };
+    const cases = { weather:{prompt:'查北京周末天气，推荐适合户外拍摄的时间。',answer:'周六更适合户外拍摄，建议选择 16:40–18:20。',points:['降水概率 10%，风力 2–3 级','日落约 18:12，黄金时段光线更柔和','周日午后风力较大，不作为首选'],evidence:'Weather API · 地点解析：北京 / Asia/Shanghai · 预报更新时间：模拟数据 10:30',memory:'偏好户外拍摄，并关注黄金时段',loop:true} };
+    let selected='weather', sequence=[], index=0, timer=null, running=false, paused=false, stepMode=false, completedStages=new Set(), activeStage='', workCard=null, stepSnapshots=[];
+    const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const embedded=new URLSearchParams(location.search).has('embed');
+    if(embedded){document.body.classList.add('embed');const reportHeight=()=>parent.postMessage({type:'agent-lab-height',source:'loop',height:document.documentElement.scrollHeight},'*');addEventListener('load',reportHeight);new ResizeObserver(reportHeight).observe(document.body);}
+    function escText(el,text){ el.textContent=text; }
+    function announce(text){ $('#live').textContent=text; }
+    function dismissCoach(){ $('#startCoach')?.classList.add('dismissed'); }
+    function scrollMessages(){ const m=$('#messages'); m.scrollTop=m.scrollHeight; }
+    function animateTransfer(fromRect,target,label,type='user'){
+      if(reduced||!fromRect||!target)return;
+      const to=target.getBoundingClientRect(), token=document.createElement('div');
+      token.className='flow-token'+(type==='tool'?' tool-result':''); token.setAttribute('aria-hidden','true');
+      token.innerHTML=(type==='tool'?icons.tool:icons.brain)+'<span></span>'; token.lastElementChild.textContent=label;
+      const width=Math.min(250,Math.max(170,fromRect.width));
+      Object.assign(token.style,{left:fromRect.left+'px',top:fromRect.top+'px',width:width+'px'}); document.body.appendChild(token);
+      const dx=to.left+to.width/2-(fromRect.left+width/2),dy=to.top+Math.min(50,to.height/2)-fromRect.top;
+      const motion=token.animate([
+        {offset:0,transform:'translate3d(0,0,0) scale(1)',filter:'brightness(1)',boxShadow:'5px 5px 0 rgba(33,29,58,.22)',opacity:1},
+        {offset:.09,transform:'translate3d(0,0,0) scale(1.065)',filter:'brightness(1.18)',boxShadow:'0 0 0 9px rgba(221,252,118,.55)',opacity:1},
+        {offset:.18,transform:'translate3d(0,0,0) scale(1)',filter:'brightness(1)',boxShadow:'5px 5px 0 rgba(33,29,58,.22)',opacity:1},
+        {offset:.27,transform:'translate3d(0,0,0) scale(1.065)',filter:'brightness(1.18)',boxShadow:'0 0 0 9px rgba(221,252,118,.55)',opacity:1},
+        {offset:.3235,transform:'translate3d(0,0,0) scale(1)',filter:'brightness(1)',boxShadow:'5px 5px 0 rgba(33,29,58,.22)',opacity:1},
+        {offset:.8106,transform:'translate3d('+dx+'px,'+dy+'px,0) scale(.72)',filter:'brightness(1)',opacity:1},
+        {transform:'translate3d('+dx+'px,'+dy+'px,0) scale(.58)',opacity:0}
+      ],{duration:8500,easing:'cubic-bezier(.22,.8,.25,1)',fill:'forwards'});
+      motion.finished.then(()=>{token.remove();target.classList.add('receiving');setTimeout(()=>target.classList.remove('receiving'),2250);}).catch(()=>token.remove());
+    }
+    function userMessage(text){ const row=document.createElement('div'); row.className='msg user'; const b=document.createElement('div'); b.className='bubble'; b.textContent=text; row.appendChild(b); $('#messages').appendChild(row); scrollMessages(); }
+    function makeWorkCard(){
+      const row=document.createElement('div'); row.className='msg'; row.innerHTML='<span class="mini-avatar" aria-hidden="true">'+icons.brain+'</span><div class="work-card"><div class="work-top"><span class="pulse">'+icons.brain+'</span><div class="work-title"><strong id="workTitle">正在理解你的任务</strong><span id="workSub">准备上下文</span></div><span class="round-pill" id="roundPill">ROUND 1</span></div><div class="work-body" id="workBody"></div></div>';
+      $('#messages').appendChild(row); workCard=row; scrollMessages();
+    }
+    function workRows(items){
+      const body=$('#workBody',workCard); body.innerHTML='';
+      items.forEach(item=>{ const div=document.createElement('div'); div.className='work-row '+(item.state||''); div.innerHTML='<span class="work-icon">'+(item.state==='done'?icons.check:(item.icon==='tool'?icons.tool:icons.brain))+'</span><span></span>'; div.lastElementChild.textContent=item.text; body.appendChild(div); });
+      scrollMessages();
+    }
+    function stageVisual(stage,variant=''){
+      if(stage==='context') return '<div class="context-window"><div class="context-part"><strong>SYSTEM</strong><div class="meter"><i style="width:72%;--bar:#6d46d9"></i></div><span>规则与角色</span></div><div class="context-part"><strong>USER</strong><div class="meter"><i style="width:48%;--bar:#087f95"></i></div><span>当前任务</span></div><div class="context-part"><strong>HISTORY</strong><div class="meter"><i style="width:28%;--bar:#e9b82e"></i></div><span>近期对话</span></div>'+(variant==='loop'?'<div class="context-part"><strong>TOOL RESULT</strong><div class="meter"><i style="width:39%;--bar:#e95f49"></i></div><span>新证据</span></div>':'')+'</div>';
+      if(stage==='llm') return '<div class="llm-visual"><div class="orbit"></div><div class="orb">LLM</div></div>';
+      if(stage==='planning') return '<div class="planning-demo"><div class="source-task"><span>用户目标</span>查北京周末天气，推荐适合户外拍摄的时间</div><div class="split-label"><b>'+(variant==='retry'?'根据新证据重新拆解':'拆成 3 个可执行子任务')+'</b></div><div class="plan-list"><div class="plan-row"><i>1</i><strong>'+(variant==='retry'?'先补齐地点与时区':'确认北京与周末范围')+'</strong><span>目标</span></div><div class="plan-row"><i>2</i><strong>'+(variant==='retry'?'重新获取本地天气':'查询天气、风力与日落')+'</strong><span>行动</span></div><div class="plan-row"><i>3</i><strong>评估最佳户外拍摄时段</strong><span>判断</span></div></div></div>';
+      if(stage==='tools') return '<div class="tool-view"><div class="weather-card"><span class="weather-icon"><svg viewBox="0 0 48 48" fill="none" stroke-width="2"><circle cx="30" cy="16" r="8"/><path d="M30 3v5m0 16v5M17 16h5m16 0h5M20.8 6.8l3.5 3.5m11.4 11.4 3.5 3.5"/><path d="M11 37h24a7 7 0 0 0 0-14 11 11 0 0 0-20.8 3.9A5.5 5.5 0 0 0 11 37Z" fill="white"/></svg></span><div class="weather-main"><small>北京 · 本周六</small><strong>'+(variant==='fail'?'多云，时间待校准':'晴间多云')+'</strong></div><div class="weather-temp"><strong>24°</strong><span>'+(variant==='fail'?'时区缺失':'Asia/Shanghai')+'</span></div></div><div class="tool-meta"><span>降水概率 <b>10%</b></span><span>风力 <b>2–3 级</b></span><span>日落 <b>'+(variant==='fail'?'待确认':'18:12')+'</b></span></div><div class="tool-code"><b>API</b> · '+(variant==='retry'?'resolve_location → weather.forecast':'weather.forecast({ city: "Beijing" })')+' · <span class="'+(variant==='fail'?'bad':'good')+'">'+(variant==='fail'?'缺少时区，暂不能给出精确时间':'数据完整，可以生成建议')+'</span></div></div>'+(variant==='fail'?'<div class="loop-banner"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M20 11a8 8 0 1 0-2.3 5.7L20 14"/><path d="M20 5v6h-6"/></svg>信息还不够：工具结果返回模型，开始第 2 轮规划</div>':'');
+      if(stage==='output') return '<div class="output-visual"><div class="answer-preview"><div class="answer-preview-top"><span class="output-check">'+icons.check+'</span><div><small>推荐拍摄时间</small><strong>周六 16:40–18:20</strong></div></div><div class="answer-tags"><span>降水 10%</span><span>风力 2–3 级</span><span>日落 18:12</span></div><p class="answer-reason">光线柔和、降水少、风力较低，适合户外人像和城市风光拍摄。</p></div></div>';
+      if(stage==='memory') return '<div class="memory-visual"><div><strong>已提炼 1 条长期记忆</strong><p>'+cases[selected].memory+'</p></div><span class="memory-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg></span></div>';
+      return '<div class="waiting-visual"><div></div><div></div><div></div></div>';
+    }
+    function renderStage(stage,variant='',stepLabel=''){
+      activeStage=stage; const c=copy[stage]; $('#scene').innerHTML='<div class="scene-top"><div><div class="scene-kicker">'+c.k+'</div><h2>'+c.title+'</h2></div><span class="scene-count">'+completedStages.size+' / 6</span></div><div class="visual">'+stageVisual(stage,variant)+'</div>';
+      $('#whyText').textContent=stepLabel||c.why; $('#insideStatus').textContent=c.title; $$('.stage-btn').forEach(b=>{ const is=b.dataset.stage===stage; b.classList.toggle('active',is); b.classList.toggle('done',completedStages.has(b.dataset.stage)&&!is); b.setAttribute('aria-current',is?'step':'false'); });
+      announce(c.title); $('#navProgress').textContent=completedStages.size; $('.learn-progress span').textContent='已了解 '+completedStages.size+' / 6 个阶段';
+    }
+    function buildSequence(){
+      const isWeather=selected==='weather';
+      const base=[
+        {stage:'context',do(){workRows([{text:'组装系统规则、用户输入与对话历史',state:'current'}]);$('#workTitle').textContent='正在准备上下文';$('#workSub').textContent='Context Window';$('#tokenStat').textContent=(1260+Math.ceil($('#prompt').value.length/2))+' tokens';}},
+        {stage:'llm',do(){workRows([{text:'上下文已封装',state:'done'},{text:'识别任务目标与必要条件',state:'current'}]);$('#workTitle').textContent='正在理解任务';$('#workSub').textContent='识别目标与约束';}},
+        {stage:'planning',do(){workRows([{text:'理解任务目标',state:'done'},{text:'规划：查询信息 → 评估条件 → 输出建议',state:'current'}]);$('#workTitle').textContent='正在制定行动计划';$('#workSub').textContent='选择下一步和工具';$('#roundStat').textContent='1';}},
+        {stage:'tools',variant:isWeather?'fail':'',do(){workRows([{text:'第一轮计划已完成',state:'done'},{text:isWeather?'调用天气工具：信息不完整':'调用外部工具：数据返回成功',state:isWeather?'warn':'current',icon:'tool'}]);$('#workTitle').textContent=isWeather?'工具返回的信息不够':'正在读取工具结果';$('#workSub').textContent=isWeather?'需要补充时区证据':'证据已取得';$('#toolStat').textContent='1';}}
+      ];
+      if(isWeather) base.push(
+        {stage:'context',variant:'loop',loop:true,do(){workRows([{text:'天气工具：缺少时区字段',state:'warn',icon:'tool'},{text:'把工具结果加入新一轮上下文',state:'current'}]);$('#workTitle').textContent='Agent Loop 已触发';$('#workSub').textContent='工具结果回流模型';$('#roundPill').textContent='ROUND 2';}},
+        {stage:'planning',variant:'retry',do(){workRows([{text:'缺失字段已进入上下文',state:'done'},{text:'新计划：解析地点时区，再查询天气',state:'current'}]);$('#workTitle').textContent='正在重新规划';$('#workSub').textContent='基于新证据修正行动';$('#roundStat').textContent='2';}},
+        {stage:'tools',variant:'retry',do(){workRows([{text:'地点解析：Asia/Shanghai',state:'done',icon:'tool'},{text:'天气预报与日落时间已返回',state:'done',icon:'tool'}]);$('#workTitle').textContent='证据已经完整';$('#workSub').textContent='任务满足输出条件';$('#toolStat').textContent='3';}}
+      );
+      base.push(
+        {stage:'output',do(){workRows([{text:'检查目标：天气、时段、拍摄建议',state:'done'},{text:'组织为用户可读的回答',state:'done'}]);$('#workTitle').textContent='回答已准备好';$('#workSub').textContent='证据与用户目标一致';addAnswer();}},
+        {stage:'memory',do(){workRows([{text:'最终回答已发送',state:'done'},{text:'提炼可复用偏好并写入长期记忆',state:'done'}]);$('#workTitle').textContent='本次任务完成';$('#workSub').textContent='长期记忆已更新';finish();}}
+      );
+      return base;
+    }
+    function addAnswer(){
+      if($('#finalAnswer')) return;
+      const c=cases[selected], row=document.createElement('div'); row.className='msg'; row.id='finalAnswer';
+      row.innerHTML='<span class="mini-avatar" aria-hidden="true">'+icons.brain+'</span><div class="bubble answer"><strong></strong><ul></ul><button class="evidence-btn" type="button" aria-expanded="false">'+icons.tool+'查看工具依据</button><div class="evidence"></div></div>';
+      $('strong',row).textContent=c.answer; const ul=$('ul',row); c.points.forEach(p=>{const li=document.createElement('li');li.textContent=p;ul.appendChild(li);}); $('.evidence',row).textContent=c.evidence;
+      $('#messages').appendChild(row); scrollMessages();
+    }
+    function captureStep(){
+      return {index,activeStage,completed:[...completedStages],scene:$('#scene').innerHTML,why:$('#whyText').textContent,status:$('#insideStatus').textContent,workTitle:$('#workTitle')?.textContent||'',workSub:$('#workSub')?.textContent||'',workBody:$('#workBody')?.innerHTML||'',roundPill:$('#roundPill')?.textContent||'',token:$('#tokenStat').textContent,round:$('#roundStat').textContent,tool:$('#toolStat').textContent,looping:$('.process-guide').classList.contains('looping'),hasAnswer:!!$('#finalAnswer')};
+    }
+    function restoreStep(snap){
+      if(!snap)return; clearTimeout(timer); $$('.flow-token').forEach(n=>n.remove()); index=snap.index; activeStage=snap.activeStage; completedStages=new Set(snap.completed); $('#scene').innerHTML=snap.scene; $('#whyText').textContent=snap.why; $('#insideStatus').textContent=snap.status;
+      if($('#workTitle')) $('#workTitle').textContent=snap.workTitle; if($('#workSub')) $('#workSub').textContent=snap.workSub; if($('#workBody')) $('#workBody').innerHTML=snap.workBody; if($('#roundPill')) $('#roundPill').textContent=snap.roundPill;
+      $('#tokenStat').textContent=snap.token; $('#roundStat').textContent=snap.round; $('#toolStat').textContent=snap.tool; $('.process-guide').classList.toggle('looping',snap.looping); if(!snap.hasAnswer) $('#finalAnswer')?.remove(); else if(!$('#finalAnswer')) addAnswer();
+      $$('.stage-btn').forEach(b=>{const is=b.dataset.stage===activeStage;b.classList.toggle('active',is);b.classList.toggle('done',completedStages.has(b.dataset.stage)&&!is);b.setAttribute('aria-current',is?'step':'false');}); $('#navProgress').textContent=completedStages.size; $('.learn-progress span').textContent='已了解 '+completedStages.size+' / 6 个阶段';
+      running=true; paused=false; $('#prompt').disabled=true; $('#sendBtn').setAttribute('aria-label','停止当前任务'); $('#sendBtn').innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'; $('#prevBtn').hidden=index<=1; $('#nextBtn').hidden=false; announce('已返回上一步：'+snap.status);
+    }
+    function previousStep(){ if(!stepMode||index<=1)return; restoreStep(stepSnapshots[index-1]); }
+    function applyStep(){
+      if(index>=sequence.length){ finish(); return; }
+      const item=sequence[index],isFirstContext=index===0,toolRect=item.loop?$('.weather-card')?.getBoundingClientRect():null;
+      completedStages.add(item.stage); renderStage(item.stage,item.variant,item.loop?'关键点：工具结果没有被丢掉，而是沿 Agent Loop 装回上下文，成为第二轮规划的新证据。':''); item.do();
+      if(item.stage==='tools'&&item.variant==='fail') $('.process-guide').classList.add('looping');
+      if(isFirstContext) requestAnimationFrame(()=>animateTransfer($('.msg.user .bubble:last-child')?.getBoundingClientRect(),$('.context-window'),'用户问题 · 北京周末拍摄'));
+      if(item.loop) requestAnimationFrame(()=>animateTransfer(toolRect,$('.context-window'),'工具结果 · 时区信息缺失','tool'));
+      index++;
+      stepSnapshots[index]=captureStep();
+      if(!stepMode&&!paused&&index<sequence.length) timer=setTimeout(applyStep,10000);
+      if(stepMode){ $('#prevBtn').hidden=index<=1; $('#nextBtn').hidden=index>=sequence.length; }
+    }
+    function begin(){
+      const value=$('#prompt').value.trim(); if(!value){ $('#prompt').focus(); announce('请输入一个任务'); return; }
+      dismissCoach(); reset(false); selected=inferCase(value); userMessage(value); makeWorkCard(); sequence=buildSequence(); stepSnapshots=[]; running=true; paused=false; $('#pauseBtn').disabled=false; $('#sendBtn').setAttribute('aria-label','停止当前任务'); $('#sendBtn').innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'; $('#prompt').disabled=true; $('#prevBtn').hidden=true; $('#nextBtn').hidden=!stepMode; applyStep();
+    }
+    function inferCase(){ return 'weather'; }
+    function finish(){ if(!running)return; running=false; paused=false; clearTimeout(timer); completedStages.add('memory'); renderStage('memory'); $('#pauseBtn').disabled=true; $('#pauseBtn span').textContent='暂停'; $('#prevBtn').hidden=!stepMode; $('#nextBtn').hidden=true; $('#prompt').disabled=false; $('#sendBtn').setAttribute('aria-label','发送任务'); $('#sendBtn').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>'; announce('任务完成，回答已生成并写入长期记忆'); }
+    function stop(){ clearTimeout(timer); running=false; paused=false; $('#pauseBtn').disabled=true; $('#prevBtn').hidden=true; $('#nextBtn').hidden=true; $('#prompt').disabled=false; $('#sendBtn').setAttribute('aria-label','发送任务'); $('#sendBtn').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>'; $('#insideStatus').textContent='演示已停止'; announce('演示已停止'); }
+    function reset(clearInput=true){
+      clearTimeout(timer); running=false; paused=false; index=0; completedStages=new Set(); activeStage=''; workCard=null; stepSnapshots=[];
+      $$('.flow-token').forEach(n=>n.remove()); $('.process-guide').classList.remove('looping');
+      $$('.messages .msg:not(.welcome)').forEach(n=>n.remove()); $$('.stage-btn').forEach(b=>b.classList.remove('done','active')); $('#roundStat').textContent='0';$('#toolStat').textContent='0';$('#tokenStat').textContent='0 tokens';$('#navProgress').textContent='0';$('.learn-progress span').textContent='已了解 0 / 6 个阶段';
+      $('#scene').innerHTML='<div class="scene-top"><div><div class="scene-kicker">READY · 00</div><h2>发出一句话，启动整个 Agent</h2></div><span class="scene-count">0 / 6</span></div><div class="visual"><div class="waiting-visual" aria-hidden="true"><div></div><div></div><div></div></div></div>'; $('#whyText').textContent='Agent 不是一次性生成答案。一次任务会经过理解、规划、行动、校验，并在必要时重复这个循环。';$('#insideStatus').textContent='等待一个任务';
+      $('#pauseBtn').disabled=true;$('#prevBtn').hidden=true;$('#nextBtn').hidden=true;$('#prompt').disabled=false; if(clearInput) $('#prompt').value=cases[selected].prompt; $('#sendBtn').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>'; scrollMessages();
+    }
+    $('#sendBtn').addEventListener('click',()=>running?stop():begin());
+    $('#prompt').addEventListener('focus',dismissCoach);
+    $('#prompt').addEventListener('input',dismissCoach);
+    $('#prompt').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!running)begin();} });
+    $('#pauseBtn').addEventListener('click',()=>{ if(!running)return; paused=!paused; clearTimeout(timer); $('#pauseBtn span').textContent=paused?'继续':'暂停'; $('#pauseBtn').setAttribute('aria-pressed',String(paused)); if(!paused&&!stepMode)timer=setTimeout(applyStep,10000); announce(paused?'自动演示已暂停':'自动演示继续'); });
+    $('#modeBtn').addEventListener('click',()=>{ stepMode=!stepMode; clearTimeout(timer); paused=false; $('#modeBtn').setAttribute('aria-pressed',String(stepMode)); $('#modeBtn span').textContent=stepMode?'逐步':'自动'; $('#modeBtn').classList.toggle('primary',stepMode); $('#prevBtn').hidden=!stepMode||index<=1; $('#nextBtn').hidden=!stepMode||!running; $('#pauseBtn').hidden=stepMode; if(!stepMode&&running)timer=setTimeout(applyStep,10000); announce(stepMode?'已切换逐步模式':'已切换自动模式'); });
+    $('#prevBtn').addEventListener('click',previousStep);
+    $('#nextBtn').addEventListener('click',()=>{ if(running)applyStep(); });
+    $('#resetBtn').addEventListener('click',()=>{ reset(); $('#startCoach')?.classList.remove('dismissed'); announce('任务已重置，可以重新开始'); });
+    $('#replayTop').addEventListener('click',()=>{ reset(); $('#lab').scrollIntoView({behavior:reduced?'auto':'smooth'}); });
+    $('#messages').addEventListener('click',e=>{ const b=e.target.closest('.evidence-btn'); if(!b)return; const panel=b.nextElementSibling,open=panel.classList.toggle('open');b.setAttribute('aria-expanded',String(open));b.lastChild.textContent=open?'收起工具依据':'查看工具依据'; });
+    $$('.stage-btn').forEach(b=>b.addEventListener('click',()=>{ const s=b.dataset.stage;if(!completedStages.has(s))return;renderStage(s); }));
+    if(reduced){ stepMode=true; $('#modeBtn').setAttribute('aria-pressed','true'); $('#modeBtn span').textContent='逐步'; $('#modeBtn').classList.add('primary'); $('#pauseBtn').hidden=true; }
+  </script>
+  <script src="onboarding-guide.js"></script>
+  <script>if(new URLSearchParams(location.search).has('embed'))AgentOnboardingGuide.init({target:'#sendBtn',title:'把任务交给 Agent',text:'天气案例已经放入输入框，点击发送开始观察 Agent Loop。'})</script>
+</body>
+</html>
